@@ -60,6 +60,8 @@ class StyleTransfer:
         self.cols = 0
 
         self.evaluator = None
+        self.loss = None
+        self.gradients = None
 
 
     def create_image(self, style: str = '', content: str = '') -> None:
@@ -78,6 +80,7 @@ class StyleTransfer:
         width, height = load_img(self.content).size
         self.rows = 400
         self.cols = int(width * self.rows / height)
+        print(f'Creating images of size ({self.rows}, {self.cols})')
 
         base, style, generated, input_tensor = self.create_tensors()
 
@@ -89,14 +92,16 @@ class StyleTransfer:
         outputs = { layer.name: layer.output for layer in network.layers }
 
         # Get the loss and the gradient of the generated image with respect to the loss.
-        loss = self.loss_tensor(outputs, generated)
-        gradients = K.gradients(loss, generated)
+        self.loss_tensor(outputs, generated)
+        self.gradients = K.gradients(self.loss, generated)
 
         # Define the output of the network and how to get the gradients and loss.
-        network_output = self.network_outputs(loss, gradients, generated)
+        network_output = self.network_outputs(generated)
         self.evaluator = Evaluator(network_output, self.rows, self.cols)
 
         image = self.get_image(self.content)
+        print('Generated all data succesfully, starting to run...')
+
         self._run(image, content)
 
 
@@ -134,14 +139,14 @@ class StyleTransfer:
         return img
 
 
-    def network_outputs(self, loss, gradients, generated_t):
+    def network_outputs(self, generated_t):
         '''Return a list of the outputs of the network.'''
-        out = [loss]
+        out = [self.loss]
 
-        if isinstance(gradients, (list, tuple)):
-            out += gradients
+        if isinstance(self.gradients, (list, tuple)):
+            out += self.gradients
         else:
-            out.append(gradients)
+            out.append(self.gradients)
 
         return K.function([generated_t], out)
 
@@ -152,13 +157,13 @@ class StyleTransfer:
             @generated_t: Keras tensor for the generated image.
         '''
 
-        loss = K.variable(0.0)
+        self.loss = K.variable(0.0)
 
         layer_features = outputs[content_layer]
         original = layer_features[0, :, : ,:]
         generated = layer_features[2, :, :, :]
 
-        loss += alpha * content_loss(original, generated)
+        self.loss += alpha * content_loss(original, generated)
 
         style_weight = beta / len(feature_layers)
         for layer in feature_layers:
@@ -166,10 +171,9 @@ class StyleTransfer:
             style = layer_features[1, :, :, :]
             generated = layer_features[2, :, :, :]
 
-            loss += style_weight * style_loss(style, generated)
+            self.loss += style_weight * style_loss(style, generated)
 
-        loss += gamma * total_variation_loss(generated_t, self.rows, self.cols)
-        return loss
+        self.loss += gamma * total_variation_loss(generated_t, self.rows, self.cols)
 
 
     def create_tensors(self) -> tuple:
@@ -217,7 +221,7 @@ class Evaluator:
         self.gradient = None
 
 
-    def eval_loss_and_grads(self, x) -> tuple:
+    def eval_loss_and_grads(self, x) -> None:
         '''Evaluate the loss and gradient of the image. From the Keras docs.'''
 
         if K.image_data_format() == 'channels_first':
@@ -226,28 +230,34 @@ class Evaluator:
             x = x.reshape((1, self.rows, self.cols, 3))
 
         outs = self.network([x])
-        loss_value = outs[0]
+        print('found gradients')
+        self.loss = outs[0]
 
         if len(outs[1:]) == 1:
-            grad_values = outs[1].flatten().astype('float64')
+            self.gradient = outs[1].flatten().astype('float64')
         else:
-            grad_values = np.array(outs[1:]).flatten().astype('float64')
+            self.gradient = np.array(outs[1:]).flatten().astype('float64')
 
-        return loss_value, grad_values
+        print('Found loss and gradient...')
 
 
     def loss_eval(self, x) -> float:
         '''Evaluate the loss and gradient and store them.'''
 
-        self.loss, self.gradient = self.eval_loss_and_grads(x)
+        assert self.loss == None
+
+        self.eval_loss_and_grads(x)
         return self.loss
 
 
     def gradients_eval(self, x):
         '''Return the gradient.'''
 
+        assert self.loss != None
+
         gradient = np.copy(self.gradient)
-        self.loss = self.gradient = None
+        self.loss = None
+        self.gradient = None
 
         return gradient
 

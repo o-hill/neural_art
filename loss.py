@@ -29,6 +29,8 @@ def gram_matrix(responses):
             Size: (Number of Layers) x (Number of Filters in Layer i) x (Size of Filter j).
     '''
 
+    assert K.ndim(responses) == 3
+
     # Find the shape of the 3D matrix.
     shape = K.shape(responses)
 
@@ -47,6 +49,8 @@ def style_loss(original, generated) -> float:
 
         Return the MSE between the two.
     '''
+
+    assert K.ndim(original) == 3 and K.ndim(generated) == 3
 
     shape = K.shape(original)
 
