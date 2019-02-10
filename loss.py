@@ -35,8 +35,6 @@ def gram_matrix(responses):
     # Reshape the filters into the F matrix: (width*height, num_filters)
     F = K.reshape(responses, (shape[0] * shape[1], shape[2]))
 
-    debug()
-
     # Now return the Gram matrix.
     return K.dot(F, K.transpose(F))
 
@@ -56,11 +54,11 @@ def style_loss(original, generated) -> float:
     Nl = (shape[0] * shape[1]) ** 2
     Ml = shape[2] ** 2
 
-    factor = 1 / (4 * Nl * Ml)
+    factor = K.cast(1 / (4 * Nl * Ml), dtype='float32')
     return factor * K.sum(K.square(gram_matrix(generated) - gram_matrix(original)))
 
 
-def total_variation_loss(image):
+def total_variation_loss(x, img_nrows: int = 0, img_ncols: int = 0) -> float:
     '''Return the total variational loss to preserve spatial coherency.'''
     if K.image_data_format() == 'channels_first':
         a = K.square(

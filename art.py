@@ -12,8 +12,9 @@ from keras.preprocessing.image import load_img, save_img, img_to_array
 from scipy.optimize import fmin_l_bfgs_b
 from keras.applications import vgg19
 import os
+from tqdm import tqdm
 
-from .loss import *
+from loss import *
 
 
 # Define some constants.
@@ -41,11 +42,12 @@ gamma = 1.0     # Total variation loss weight.
 
 class StyleTransfer:
 
-    def __init__(self):
+    def __init__(self, iterations: int = 10) -> None:
         self.base_path = FILE_PATH
         self.style_path = STYLE_PATH
         self.content_path = CONTENT_PATH
         self.write_path = WRITE_PATH
+        self.iterations = iterations
 
         self.alpha = alpha
         self.beta = beta
@@ -69,13 +71,13 @@ class StyleTransfer:
             Writes a new image to the write path.
         '''
 
-        # Find the dimensions of the generated image.
-        width, height = load_img(content).size
-        self.rows = 400
-        self.cols = int(width * rows / height)
-
         self.style = f'{self.style_path}/{style}'
         self.content = f'{self.content_path}/{content}'
+
+        # Find the dimensions of the generated image.
+        width, height = load_img(self.content).size
+        self.rows = 400
+        self.cols = int(width * self.rows / height)
 
         base, style, generated, input_tensor = self.create_tensors()
 
@@ -87,11 +89,11 @@ class StyleTransfer:
         outputs = { layer.name: layer.output for layer in network.layers }
 
         # Get the loss and the gradient of the generated image with respect to the loss.
-        loss = self.loss_tensor(outputs)
+        loss = self.loss_tensor(outputs, generated)
         gradients = K.gradients(loss, generated)
 
         # Define the output of the network and how to get the gradients and loss.
-        network_output = self.network_outputs(loss, gradients)
+        network_output = self.network_outputs(loss, gradients, generated)
         self.evaluator = Evaluator(network_output, self.rows, self.cols)
 
         image = self.get_image(self.content)
@@ -106,16 +108,15 @@ class StyleTransfer:
 
         write_path = f'{self.write_path}/{image_filename.split(".")[0]}'
         file_type = image_filename.split('.')[-1]
-        if not os.path_exists(write_path):
+        if not os.path.exists(write_path):
             os.makedirs(write_path)
 
-        for iteration in range(self.iterations):
+        for iteration in tqdm(range(self.iterations)):
 
             image, loss, info = fmin_l_bfgs_b(
-                    self.evaluator.loss,
+                    self.evaluator.loss_eval,
                     image.flatten(),
-                    fprime = evaluator.gradient,
-                    maxfun = 20)
+                    fprime = self.evaluator.gradients_eval)
 
             print(f'Loss at iteration {iteration}: {loss}')
             save_img(f'{write_path}/iteration_{iteration}.{file_type}',
@@ -125,7 +126,7 @@ class StyleTransfer:
 
 
 
-    def get_image(self, img_path: str = '') -> K.Variable:
+    def get_image(self, img_path: str = '') -> K.variable:
         '''Load an image.'''
         img = img_to_array(load_img(img_path, target_size=(self.rows, self.cols)))
         img = np.expand_dims(img, axis=0)
@@ -133,7 +134,7 @@ class StyleTransfer:
         return img
 
 
-    def network_outputs(self, loss, gradients) -> list:
+    def network_outputs(self, loss, gradients, generated_t):
         '''Return a list of the outputs of the network.'''
         out = [loss]
 
@@ -142,10 +143,10 @@ class StyleTransfer:
         else:
             out.append(gradients)
 
-        return out
+        return K.function([generated_t], out)
 
 
-    def loss_tensor(self, outputs: dict = { }, generated_t = None) -> K.Variable:
+    def loss_tensor(self, outputs: dict = { }, generated_t = None) -> K.variable:
         '''Define and return the Keras tensor for the total loss.
 
             @generated_t: Keras tensor for the generated image.
@@ -167,7 +168,7 @@ class StyleTransfer:
 
             loss += style_weight * style_loss(style, generated)
 
-        loss += gamma * total_variation_loss(generated_t)
+        loss += gamma * total_variation_loss(generated_t, self.rows, self.cols)
         return loss
 
 
@@ -224,7 +225,7 @@ class Evaluator:
         else:
             x = x.reshape((1, self.rows, self.cols, 3))
 
-        outs = network([x])
+        outs = self.network([x])
         loss_value = outs[0]
 
         if len(outs[1:]) == 1:
@@ -235,14 +236,14 @@ class Evaluator:
         return loss_value, grad_values
 
 
-    def loss(self, x) -> float:
+    def loss_eval(self, x) -> float:
         '''Evaluate the loss and gradient and store them.'''
 
         self.loss, self.gradient = self.eval_loss_and_grads(x)
         return self.loss
 
 
-    def gradients(self, x):
+    def gradients_eval(self, x):
         '''Return the gradient.'''
 
         gradient = np.copy(self.gradient)
@@ -253,11 +254,11 @@ class Evaluator:
 
 if __name__ == '__main__':
 
-    content = 'tuebingen.jpg'
-    style = 'starry_night.jpg'
+    content = 'small_tuebingen.jpg'
+    style = 'small_starry_night.jpg'
 
     transfer = StyleTransfer()
-    transfer.create_image(content, style)
+    transfer.create_image(style, content)
 
 
 
