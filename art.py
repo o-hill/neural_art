@@ -15,7 +15,7 @@ import os
 from tqdm import tqdm
 
 from keras.utils import plot_model
-from k_loss import *
+from loss import *
 
 
 # Define some constants.
@@ -201,7 +201,7 @@ class StyleTransfer:
             x = x.reshape((3, self.rows, self.cols))
             x = x.transpose((1, 2, 0))
         else:
-            x = x.reshape((img_nrows, img_ncols, 3))
+            x = x.reshape((self.rows, self.cols, 3))
         # Remove zero-center by mean pixel
         x[:, :, 0] += 103.939
         x[:, :, 1] += 116.779

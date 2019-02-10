@@ -31,17 +31,16 @@ def gram_matrix(responses):
 
     assert K.ndim(responses) == 3
 
-    # Find the shape of the 3D matrix.
-    shape = K.shape(responses)
-
-    # Reshape the filters into the F matrix: (width*height, num_filters)
-    F = K.reshape(responses, (shape[0] * shape[1], shape[2]))
+    if K.image_data_format() == 'channels_first':
+        F = K.batch_flatten(responses)
+    else:
+        F = K.batch_flatten(K.permute_dimensions(responses, (2, 0, 1)))
 
     # Now return the Gram matrix.
     return K.dot(F, K.transpose(F))
 
 
-def style_loss(original, generated) -> float:
+def style_loss(original, generated, n_rows, n_cols) -> float:
     '''Style loss as described by the paper.
 
         @original: tensor of the responses in the filters for the original image.
@@ -51,15 +50,13 @@ def style_loss(original, generated) -> float:
     '''
 
     assert K.ndim(original) == 3 and K.ndim(generated) == 3
-
-    shape = K.shape(original)
+    channels = 3
 
     # Find the coefficients for the loss.
-    Nl = (shape[0] * shape[1]) ** 2
-    Ml = shape[2] ** 2
+    Nl = (n_rows * n_cols) ** 2
+    Ml = channels ** 2
 
-    factor = K.cast(1 / (4 * Nl * Ml), dtype='float32')
-    return factor * K.sum(K.square(gram_matrix(generated) - gram_matrix(original)))
+    return K.sum(K.square(gram_matrix(generated) - gram_matrix(original))) / (4.0 * Nl * Ml)
 
 
 def total_variation_loss(x, img_nrows: int = 0, img_ncols: int = 0) -> float:
