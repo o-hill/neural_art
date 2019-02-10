@@ -14,7 +14,8 @@ from keras.applications import vgg19
 import os
 from tqdm import tqdm
 
-from loss import *
+from keras.utils import plot_model
+from k_loss import *
 
 
 # Define some constants.
@@ -102,6 +103,7 @@ class StyleTransfer:
         image = self.get_image(self.content)
         print('Generated all data succesfully, starting to run...')
 
+        plot_model(network, show_shapes=True)
         self._run(image, content)
 
 
@@ -121,7 +123,8 @@ class StyleTransfer:
             image, loss, info = fmin_l_bfgs_b(
                     self.evaluator.loss_eval,
                     image.flatten(),
-                    fprime = self.evaluator.gradients_eval)
+                    fprime = self.evaluator.gradients_eval,
+                    maxfun = 20)
 
             print(f'Loss at iteration {iteration}: {loss}')
             save_img(f'{write_path}/iteration_{iteration}.{file_type}',
@@ -171,7 +174,7 @@ class StyleTransfer:
             style = layer_features[1, :, :, :]
             generated = layer_features[2, :, :, :]
 
-            self.loss += style_weight * style_loss(style, generated)
+            self.loss += style_weight * style_loss(style, generated, self.rows, self.cols)
 
         self.loss += gamma * total_variation_loss(generated_t, self.rows, self.cols)
 
